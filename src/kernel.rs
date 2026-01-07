@@ -33,18 +33,21 @@ pub fn mat_mul(a: &Mat, b: &Mat) -> Result<Mat> {
     if n != nb {
         return Err(anyhow!("mat_mul dim mismatch: {} vs {}", n, nb));
     }
+
     let mut out = vec![vec![0i64; n]; n];
-    for i in 0..n {
-        for k in 0..n {
-            let aik = a[i][k];
+
+    for (i, row_a) in a.iter().enumerate() {
+        for (k, &aik) in row_a.iter().enumerate() {
             if aik == 0 {
                 continue;
             }
-            for j in 0..n {
-                out[i][j] = out[i][j].saturating_add(aik.saturating_mul(b[k][j]));
+            let row_b = &b[k];
+            for (j, &bkj) in row_b.iter().enumerate() {
+                out[i][j] = out[i][j].saturating_add(aik.saturating_mul(bkj));
             }
         }
     }
+
     Ok(out)
 }
 
@@ -55,9 +58,9 @@ pub fn mat_add(a: &Mat, b: &Mat, sign_b: i64) -> Result<Mat> {
         return Err(anyhow!("mat_add dim mismatch: {} vs {}", n, nb));
     }
     let mut out = vec![vec![0i64; n]; n];
-    for i in 0..n {
-        for j in 0..n {
-            out[i][j] = a[i][j].saturating_add(sign_b.saturating_mul(b[i][j]));
+    for (i, row_a) in a.iter().enumerate() {
+        for (j, &aij) in row_a.iter().enumerate() {
+            out[i][j] = aij.saturating_add(sign_b.saturating_mul(b[i][j]));
         }
     }
     Ok(out)
@@ -69,9 +72,9 @@ pub fn mat_eq(a: &Mat, b: &Mat) -> Result<bool> {
     if n != nb {
         return Ok(false);
     }
-    for i in 0..n {
-        for j in 0..n {
-            if a[i][j] != b[i][j] {
+    for (i, row_a) in a.iter().enumerate() {
+        for (j, &aij) in row_a.iter().enumerate() {
+            if aij != b[i][j] {
                 return Ok(false);
             }
         }
@@ -81,8 +84,8 @@ pub fn mat_eq(a: &Mat, b: &Mat) -> Result<bool> {
 
 pub fn mat_identity(n: usize) -> Mat {
     let mut i = vec![vec![0i64; n]; n];
-    for k in 0..n {
-        i[k][k] = 1;
+    for (k, row) in i.iter_mut().enumerate() {
+        row[k] = 1;
     }
     i
 }
@@ -90,12 +93,14 @@ pub fn mat_identity(n: usize) -> Mat {
 pub fn mat_apply(a: &Mat, x: &VecI) -> Result<VecI> {
     let n = mat_dim(a)?;
     vec_dim(x, n)?;
+
     let mut out = vec![0i64; n];
-    for i in 0..n {
-        let mut acc = 0i64;
-        for j in 0..n {
-            acc = acc.saturating_add(a[i][j].saturating_mul(x[j]));
-        }
+    for (i, row_a) in a.iter().enumerate() {
+        let acc: i64 = row_a
+            .iter()
+            .zip(x.iter())
+            .map(|(&aij, &xj)| aij.saturating_mul(xj))
+            .fold(0i64, |s, t| s.saturating_add(t));
         out[i] = acc;
     }
     Ok(out)
@@ -103,14 +108,6 @@ pub fn mat_apply(a: &Mat, x: &VecI) -> Result<VecI> {
 
 pub fn is_zero_vec(x: &VecI) -> bool {
     x.iter().all(|&t| t == 0)
-}
-
-pub fn phi_power_apply(phi: &Mat, k: usize, x: &VecI) -> Result<VecI> {
-    let mut cur = x.clone();
-    for _ in 0..k {
-        cur = mat_apply(phi, &cur)?;
-    }
-    Ok(cur)
 }
 
 pub fn termination_height_under_phi(phi: &Mat, k_max: usize, x0: &VecI) -> Result<usize> {
@@ -125,6 +122,18 @@ pub fn termination_height_under_phi(phi: &Mat, k_max: usize, x0: &VecI) -> Resul
         }
     }
     Err(anyhow!("did not reach 0 within nilpotence_k={}", k_max))
+}
+
+fn phi_power(phi: &Mat, k: usize) -> Result<Mat> {
+    let n = mat_dim(phi)?;
+    if k == 0 {
+        return Ok(mat_identity(n));
+    }
+    let mut out = phi.clone();
+    for _ in 1..k {
+        out = mat_mul(&out, phi)?;
+    }
+    Ok(out)
 }
 
 pub fn check_kernel_axioms(p: &Mat, phi: &Mat, nilpotence_k: usize) -> Result<()> {
@@ -152,8 +161,8 @@ pub fn check_kernel_axioms(p: &Mat, phi: &Mat, nilpotence_k: usize) -> Result<()
         return Err(anyhow!("support failed: (I-P)Phi(I-P) != Phi"));
     }
 
-    let ip_x = &ip;
-    let test = mat_mul(&phi_power(phi, nilpotence_k)?, ip_x)?;
+    let phi_k = phi_power(phi, nilpotence_k)?;
+    let test = mat_mul(&phi_k, &ip)?;
     if !mat_eq(&test, &z)? {
         return Err(anyhow!(
             "nilpotence failed on residue: Phi^k * (I-P) != 0 for k={}",
@@ -162,16 +171,4 @@ pub fn check_kernel_axioms(p: &Mat, phi: &Mat, nilpotence_k: usize) -> Result<()
     }
 
     Ok(())
-}
-
-fn phi_power(phi: &Mat, k: usize) -> Result<Mat> {
-    let n = mat_dim(phi)?;
-    if k == 0 {
-        return Ok(mat_identity(n));
-    }
-    let mut out = phi.clone();
-    for _ in 1..k {
-        out = mat_mul(&out, phi)?;
-    }
-    Ok(out)
 }

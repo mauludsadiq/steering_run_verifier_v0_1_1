@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 
@@ -14,6 +15,11 @@ use steering_run_verifier::kernel::{
 #[derive(Debug, Serialize)]
 struct OutOk {
     ok: bool,
+    cid_run: String,
+}
+
+#[derive(Debug, Serialize)]
+struct OutCidRun {
     cid_run: String,
 }
 
@@ -87,8 +93,10 @@ struct Sample {
 #[serde(deny_unknown_fields)]
 struct Kernel {
     space: Space,
-    projection_P: Mat,
-    descent_Phi: Mat,
+    #[serde(rename = "projection_P")]
+    projection_p: Mat,
+    #[serde(rename = "descent_Phi")]
+    descent_phi: Mat,
     nilpotence_k: usize,
     entropy: Entropy,
     samples: Vec<Sample>,
@@ -108,11 +116,23 @@ fn read_bytes(path: &str) -> Result<Vec<u8>> {
     Ok(fs::read(path)?)
 }
 
+fn artifacts_cid_set(w: &KernelWitness) -> BTreeSet<String> {
+    w.artifacts.items.iter().map(|it| it.cid.clone()).collect()
+}
+
 fn verify_artifacts(w: &KernelWitness, cas_dir: &str) -> Result<()> {
     if w.artifacts.hash_algo != "sha256" {
         return Err(anyhow!("artifacts.hash_algo must be sha256"));
     }
+
     for it in &w.artifacts.items {
+        if it.media_type.is_empty() {
+            return Err(anyhow!("artifact {} media_type must be nonempty", it.cid));
+        }
+        if it.note.is_empty() {
+            return Err(anyhow!("artifact {} note must be nonempty", it.cid));
+        }
+
         let p = format!("{}/{}", cas_dir, it.cid);
         let b = read_bytes(&p).map_err(|e| anyhow!("failed to read {}: {}", p, e))?;
         let got = sha256_hex(&b);
@@ -128,7 +148,7 @@ fn verify_artifacts(w: &KernelWitness, cas_dir: &str) -> Result<()> {
     Ok(())
 }
 
-fn compute_cid_run_json(
+fn compute_cid_run_from_value(
     mut v: Value,
     blank_fields: &[String],
     blank_value: &str,
@@ -138,6 +158,16 @@ fn compute_cid_run_json(
     }
     let canon = canonical_json_string(&v)?;
     Ok(sha256_hex(canon.as_bytes()))
+}
+
+fn compute_cid_run_from_path(
+    witness_path: &str,
+    blank_fields: &[String],
+    blank_value: &str,
+) -> Result<String> {
+    let bytes = read_bytes(witness_path)?;
+    let v: Value = serde_json::from_slice(&bytes)?;
+    compute_cid_run_from_value(v, blank_fields, blank_value)
 }
 
 fn verify_cid_run(witness_path: &str, w: &KernelWitness) -> Result<String> {
@@ -155,13 +185,12 @@ fn verify_cid_run(witness_path: &str, w: &KernelWitness) -> Result<String> {
         ));
     }
 
-    let bytes = read_bytes(witness_path)?;
-    let v: Value = serde_json::from_slice(&bytes)?;
-    let recomputed = compute_cid_run_json(
-        v,
+    let recomputed = compute_cid_run_from_path(
+        witness_path,
         &w.run.cid_run_blank_fields,
         &w.run.cid_run_field_blank_value,
     )?;
+
     if recomputed != w.run.cid_run {
         return Err(anyhow!(
             "CID_RUN_MISMATCH claimed={} recomputed={}",
@@ -185,23 +214,37 @@ fn verify_kernel(w: &KernelWitness) -> Result<()> {
         ));
     }
 
+    let cid_set = artifacts_cid_set(w);
+    if !cid_set.contains(&w.domain.schema_cid) {
+        return Err(anyhow!(
+            "CID_REFERENCE_CLOSURE: missing domain.schema_cid={}",
+            w.domain.schema_cid
+        ));
+    }
+    if !cid_set.contains(&w.domain.verifier_cid) {
+        return Err(anyhow!(
+            "CID_REFERENCE_CLOSURE: missing domain.verifier_cid={}",
+            w.domain.verifier_cid
+        ));
+    }
+
     let n = w.kernel.space.dim;
-    if mat_dim(&w.kernel.projection_P)? != n {
+    if mat_dim(&w.kernel.projection_p)? != n {
         return Err(anyhow!("projection_P dim must equal space.dim"));
     }
-    if mat_dim(&w.kernel.descent_Phi)? != n {
+    if mat_dim(&w.kernel.descent_phi)? != n {
         return Err(anyhow!("descent_Phi dim must equal space.dim"));
     }
 
     check_kernel_axioms(
-        &w.kernel.projection_P,
-        &w.kernel.descent_Phi,
+        &w.kernel.projection_p,
+        &w.kernel.descent_phi,
         w.kernel.nilpotence_k,
     )?;
 
     for s in &w.kernel.samples {
         vec_dim(&s.x0, n)?;
-        let h = termination_height_under_phi(&w.kernel.descent_Phi, w.kernel.nilpotence_k, &s.x0)?;
+        let h = termination_height_under_phi(&w.kernel.descent_phi, w.kernel.nilpotence_k, &s.x0)?;
         if h != s.expect_height {
             return Err(anyhow!(
                 "SAMPLE_HEIGHT_MISMATCH expected={} got={}",
@@ -210,9 +253,9 @@ fn verify_kernel(w: &KernelWitness) -> Result<()> {
             ));
         }
         if h > 0 {
-            let x1 = mat_apply(&w.kernel.descent_Phi, &s.x0)?;
+            let x1 = mat_apply(&w.kernel.descent_phi, &s.x0)?;
             let h1 =
-                termination_height_under_phi(&w.kernel.descent_Phi, w.kernel.nilpotence_k, &x1)?;
+                termination_height_under_phi(&w.kernel.descent_phi, w.kernel.nilpotence_k, &x1)?;
             if h1 >= h {
                 return Err(anyhow!(
                     "ENTROPY_NOT_STRICTLY_DECREASING H(x)={} H(Phi(x))={}",
@@ -230,98 +273,124 @@ fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         return Err(anyhow!(
-            "usage: kernel_witness_verifier verify --witness <path> --cas-dir <dir> [--print-ok]"
+            "usage: kernel_witness_verifier verify --witness <path> --cas-dir <dir> [--print-ok] | cid-run --witness <path>"
         ));
     }
-    if args[1] != "verify" {
-        return Err(anyhow!("only subcommand supported: verify"));
-    }
 
-    let mut witness_path: Option<String> = None;
-    let mut cas_dir: Option<String> = None;
-    let mut print_ok = false;
-
-    let mut i = 2;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--witness" => {
+    match args[1].as_str() {
+        "cid-run" => {
+            let mut witness_path: Option<String> = None;
+            let mut i = 2;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--witness" => {
+                        i += 1;
+                        witness_path = args.get(i).cloned();
+                    }
+                    _ => {}
+                }
                 i += 1;
-                witness_path = args.get(i).cloned();
             }
-            "--cas-dir" => {
+            let witness_path = witness_path.ok_or_else(|| anyhow!("missing --witness"))?;
+            let cid_run =
+                compute_cid_run_from_path(&witness_path, &vec!["run.cid_run".to_string()], "")?;
+            println!("{}", serde_json::to_string_pretty(&OutCidRun { cid_run })?);
+            Ok(())
+        }
+
+        "verify" => {
+            let mut witness_path: Option<String> = None;
+            let mut cas_dir: Option<String> = None;
+            let mut print_ok = false;
+
+            let mut i = 2;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--witness" => {
+                        i += 1;
+                        witness_path = args.get(i).cloned();
+                    }
+                    "--cas-dir" => {
+                        i += 1;
+                        cas_dir = args.get(i).cloned();
+                    }
+                    "--print-ok" => {
+                        print_ok = true;
+                    }
+                    _ => {}
+                }
                 i += 1;
-                cas_dir = args.get(i).cloned();
             }
-            "--print-ok" => {
-                print_ok = true;
+
+            let witness_path = witness_path.ok_or_else(|| anyhow!("missing --witness"))?;
+            let cas_dir = cas_dir.ok_or_else(|| anyhow!("missing --cas-dir"))?;
+
+            let bytes = match fs::read(&witness_path) {
+                Ok(b) => b,
+                Err(e) => {
+                    let out = OutErr {
+                        kind: "error".to_string(),
+                        error_id: "WITNESS_READ_FAILED".to_string(),
+                        message: format!("failed to read {}: {}", witness_path, e),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&out)?);
+                    return Ok(());
+                }
+            };
+
+            let w: KernelWitness = match serde_json::from_slice(&bytes) {
+                Ok(x) => x,
+                Err(e) => {
+                    let out = OutErr {
+                        kind: "error".to_string(),
+                        error_id: "WITNESS_PARSE_FAILED".to_string(),
+                        message: format!("failed to parse witness JSON: {}", e),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&out)?);
+                    return Ok(());
+                }
+            };
+
+            if let Err(e) = verify_kernel(&w) {
+                let out = OutErr {
+                    kind: "error".to_string(),
+                    error_id: "KERNEL_CHECK_FAILED".to_string(),
+                    message: e.to_string(),
+                };
+                println!("{}", serde_json::to_string_pretty(&out)?);
+                return Ok(());
             }
-            _ => {}
-        }
-        i += 1;
-    }
 
-    let witness_path = witness_path.ok_or_else(|| anyhow!("missing --witness"))?;
-    let cas_dir = cas_dir.ok_or_else(|| anyhow!("missing --cas-dir"))?;
+            if let Err(e) = verify_artifacts(&w, &cas_dir) {
+                let out = OutErr {
+                    kind: "error".to_string(),
+                    error_id: "ARTIFACT_CHECK_FAILED".to_string(),
+                    message: e.to_string(),
+                };
+                println!("{}", serde_json::to_string_pretty(&out)?);
+                return Ok(());
+            }
 
-    let bytes = fs::read(&witness_path).map_err(|e| {
-        let out = OutErr {
-            kind: "error".to_string(),
-            error_id: "WITNESS_READ_FAILED".to_string(),
-            message: format!("failed to read {}: {}", witness_path, e),
-        };
-        println!("{}", serde_json::to_string_pretty(&out).unwrap());
-        e
-    })?;
-
-    let w: KernelWitness = match serde_json::from_slice(&bytes) {
-        Ok(x) => x,
-        Err(e) => {
-            let out = OutErr {
-                kind: "error".to_string(),
-                error_id: "WITNESS_PARSE_FAILED".to_string(),
-                message: format!("failed to parse witness JSON: {}", e),
+            let cid_run = match verify_cid_run(&witness_path, &w) {
+                Ok(x) => x,
+                Err(e) => {
+                    let out = OutErr {
+                        kind: "error".to_string(),
+                        error_id: "CID_RUN_MISMATCH".to_string(),
+                        message: e.to_string(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&out)?);
+                    return Ok(());
+                }
             };
-            println!("{}", serde_json::to_string_pretty(&out)?);
-            return Ok(());
+
+            let out = OutOk { ok: true, cid_run };
+            if print_ok || !out.ok {
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            }
+            Ok(())
         }
-    };
 
-    if let Err(e) = verify_kernel(&w) {
-        let out = OutErr {
-            kind: "error".to_string(),
-            error_id: "KERNEL_CHECK_FAILED".to_string(),
-            message: e.to_string(),
-        };
-        println!("{}", serde_json::to_string_pretty(&out)?);
-        return Ok(());
+        _ => Err(anyhow!("unknown subcommand: {}", args[1])),
     }
-
-    if let Err(e) = verify_artifacts(&w, &cas_dir) {
-        let out = OutErr {
-            kind: "error".to_string(),
-            error_id: "ARTIFACT_CHECK_FAILED".to_string(),
-            message: e.to_string(),
-        };
-        println!("{}", serde_json::to_string_pretty(&out)?);
-        return Ok(());
-    }
-
-    let cid_run = match verify_cid_run(&witness_path, &w) {
-        Ok(x) => x,
-        Err(e) => {
-            let out = OutErr {
-                kind: "error".to_string(),
-                error_id: "CID_RUN_MISMATCH".to_string(),
-                message: e.to_string(),
-            };
-            println!("{}", serde_json::to_string_pretty(&out)?);
-            return Ok(());
-        }
-    };
-
-    let out = OutOk { ok: true, cid_run };
-    if print_ok || !out.ok {
-        println!("{}", serde_json::to_string_pretty(&out)?);
-    }
-    Ok(())
 }
