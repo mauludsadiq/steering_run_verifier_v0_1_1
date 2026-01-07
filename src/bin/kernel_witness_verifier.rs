@@ -179,7 +179,7 @@ fn verify_cid_run(witness_path: &str, w: &KernelWitness) -> Result<String> {
             "run.cid_run_blank_fields must equal [\"run.cid_run\"] in v1.1"
         ));
     }
-    if w.run.cid_run_field_blank_value != "" {
+    if !w.run.cid_run_field_blank_value.is_empty() {
         return Err(anyhow!(
             "run.cid_run_field_blank_value must be \"\" in v1.1"
         ));
@@ -282,18 +282,15 @@ fn main() -> Result<()> {
             let mut witness_path: Option<String> = None;
             let mut i = 2;
             while i < args.len() {
-                match args[i].as_str() {
-                    "--witness" => {
-                        i += 1;
-                        witness_path = args.get(i).cloned();
-                    }
-                    _ => {}
+                if args[i].as_str() == "--witness" {
+                    i += 1;
+                    witness_path = args.get(i).cloned();
                 }
                 i += 1;
             }
             let witness_path = witness_path.ok_or_else(|| anyhow!("missing --witness"))?;
             let cid_run =
-                compute_cid_run_from_path(&witness_path, &vec!["run.cid_run".to_string()], "")?;
+                compute_cid_run_from_path(&witness_path, &["run.cid_run".to_string()], "")?;
             println!("{}", serde_json::to_string_pretty(&OutCidRun { cid_run })?);
             Ok(())
         }

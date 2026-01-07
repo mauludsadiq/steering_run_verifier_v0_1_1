@@ -8,7 +8,9 @@ use std::fs;
 use sha2::{Digest, Sha256};
 
 use steering_run_verifier::canonical::{canonical_json_string, set_dotpath_string};
-use steering_run_verifier::kernel::{check_kernel_axioms, mat_apply, mat_dim, termination_height_under_phi, vec_dim, Mat, VecI};
+use steering_run_verifier::kernel::{
+    check_kernel_axioms, mat_apply, mat_dim, termination_height_under_phi, vec_dim, Mat, VecI,
+};
 
 #[derive(Debug, Serialize)]
 struct OutOk {
@@ -146,7 +148,11 @@ fn verify_artifacts(w: &KernelWitness, cas_dir: &str) -> Result<()> {
     Ok(())
 }
 
-fn compute_cid_run_from_value(mut v: Value, blank_fields: &[String], blank_value: &str) -> Result<String> {
+fn compute_cid_run_from_value(
+    mut v: Value,
+    blank_fields: &[String],
+    blank_value: &str,
+) -> Result<String> {
     for dp in blank_fields {
         set_dotpath_string(&mut v, dp, blank_value)?;
     }
@@ -154,7 +160,11 @@ fn compute_cid_run_from_value(mut v: Value, blank_fields: &[String], blank_value
     Ok(sha256_hex(canon.as_bytes()))
 }
 
-fn compute_cid_run_from_path(witness_path: &str, blank_fields: &[String], blank_value: &str) -> Result<String> {
+fn compute_cid_run_from_path(
+    witness_path: &str,
+    blank_fields: &[String],
+    blank_value: &str,
+) -> Result<String> {
     let bytes = read_bytes(witness_path)?;
     let v: Value = serde_json::from_slice(&bytes)?;
     compute_cid_run_from_value(v, blank_fields, blank_value)
@@ -165,10 +175,14 @@ fn verify_cid_run(witness_path: &str, w: &KernelWitness) -> Result<String> {
         return Err(anyhow!("run.cid_run_algo must be sha256"));
     }
     if w.run.cid_run_blank_fields != vec!["run.cid_run".to_string()] {
-        return Err(anyhow!("run.cid_run_blank_fields must equal [\"run.cid_run\"] in v1.1"));
+        return Err(anyhow!(
+            "run.cid_run_blank_fields must equal [\"run.cid_run\"] in v1.1"
+        ));
     }
-    if w.run.cid_run_field_blank_value != "" {
-        return Err(anyhow!("run.cid_run_field_blank_value must be \"\" in v1.1"));
+    if !w.run.cid_run_field_blank_value.is_empty() {
+        return Err(anyhow!(
+            "run.cid_run_field_blank_value must be \"\" in v1.1"
+        ));
     }
 
     let recomputed = compute_cid_run_from_path(
@@ -195,15 +209,23 @@ fn verify_kernel(w: &KernelWitness) -> Result<()> {
         return Err(anyhow!("domain must be kernel 1.1"));
     }
     if w.kernel.entropy.kind != "termination_height_under_Phi" {
-        return Err(anyhow!("kernel.entropy.kind must be termination_height_under_Phi"));
+        return Err(anyhow!(
+            "kernel.entropy.kind must be termination_height_under_Phi"
+        ));
     }
 
     let cid_set = artifacts_cid_set(w);
     if !cid_set.contains(&w.domain.schema_cid) {
-        return Err(anyhow!("CID_REFERENCE_CLOSURE: missing domain.schema_cid={}", w.domain.schema_cid));
+        return Err(anyhow!(
+            "CID_REFERENCE_CLOSURE: missing domain.schema_cid={}",
+            w.domain.schema_cid
+        ));
     }
     if !cid_set.contains(&w.domain.verifier_cid) {
-        return Err(anyhow!("CID_REFERENCE_CLOSURE: missing domain.verifier_cid={}", w.domain.verifier_cid));
+        return Err(anyhow!(
+            "CID_REFERENCE_CLOSURE: missing domain.verifier_cid={}",
+            w.domain.verifier_cid
+        ));
     }
 
     let n = w.kernel.space.dim;
@@ -214,7 +236,11 @@ fn verify_kernel(w: &KernelWitness) -> Result<()> {
         return Err(anyhow!("descent_Phi dim must equal space.dim"));
     }
 
-    check_kernel_axioms(&w.kernel.projection_p, &w.kernel.descent_phi, w.kernel.nilpotence_k)?;
+    check_kernel_axioms(
+        &w.kernel.projection_p,
+        &w.kernel.descent_phi,
+        w.kernel.nilpotence_k,
+    )?;
 
     for s in &w.kernel.samples {
         vec_dim(&s.x0, n)?;
@@ -228,7 +254,8 @@ fn verify_kernel(w: &KernelWitness) -> Result<()> {
         }
         if h > 0 {
             let x1 = mat_apply(&w.kernel.descent_phi, &s.x0)?;
-            let h1 = termination_height_under_phi(&w.kernel.descent_phi, w.kernel.nilpotence_k, &x1)?;
+            let h1 =
+                termination_height_under_phi(&w.kernel.descent_phi, w.kernel.nilpotence_k, &x1)?;
             if h1 >= h {
                 return Err(anyhow!(
                     "ENTROPY_NOT_STRICTLY_DECREASING H(x)={} H(Phi(x))={}",
@@ -255,17 +282,15 @@ fn main() -> Result<()> {
             let mut witness_path: Option<String> = None;
             let mut i = 2;
             while i < args.len() {
-                match args[i].as_str() {
-                    "--witness" => {
-                        i += 1;
-                        witness_path = args.get(i).cloned();
-                    }
-                    _ => {}
+                if args[i].as_str() == "--witness" {
+                    i += 1;
+                    witness_path = args.get(i).cloned();
                 }
                 i += 1;
             }
             let witness_path = witness_path.ok_or_else(|| anyhow!("missing --witness"))?;
-            let cid_run = compute_cid_run_from_path(&witness_path, &vec!["run.cid_run".to_string()], "")?;
+            let cid_run =
+                compute_cid_run_from_path(&witness_path, &["run.cid_run".to_string()], "")?;
             println!("{}", serde_json::to_string_pretty(&OutCidRun { cid_run })?);
             Ok(())
         }
@@ -324,13 +349,21 @@ fn main() -> Result<()> {
             };
 
             if let Err(e) = verify_kernel(&w) {
-                let out = OutErr { kind: "error".to_string(), error_id: "KERNEL_CHECK_FAILED".to_string(), message: e.to_string() };
+                let out = OutErr {
+                    kind: "error".to_string(),
+                    error_id: "KERNEL_CHECK_FAILED".to_string(),
+                    message: e.to_string(),
+                };
                 println!("{}", serde_json::to_string_pretty(&out)?);
                 return Ok(());
             }
 
             if let Err(e) = verify_artifacts(&w, &cas_dir) {
-                let out = OutErr { kind: "error".to_string(), error_id: "ARTIFACT_CHECK_FAILED".to_string(), message: e.to_string() };
+                let out = OutErr {
+                    kind: "error".to_string(),
+                    error_id: "ARTIFACT_CHECK_FAILED".to_string(),
+                    message: e.to_string(),
+                };
                 println!("{}", serde_json::to_string_pretty(&out)?);
                 return Ok(());
             }
@@ -338,7 +371,11 @@ fn main() -> Result<()> {
             let cid_run = match verify_cid_run(&witness_path, &w) {
                 Ok(x) => x,
                 Err(e) => {
-                    let out = OutErr { kind: "error".to_string(), error_id: "CID_RUN_MISMATCH".to_string(), message: e.to_string() };
+                    let out = OutErr {
+                        kind: "error".to_string(),
+                        error_id: "CID_RUN_MISMATCH".to_string(),
+                        message: e.to_string(),
+                    };
                     println!("{}", serde_json::to_string_pretty(&out)?);
                     return Ok(());
                 }
