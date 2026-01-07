@@ -1,0 +1,216 @@
+{
+  "witness_version": "0.1.1",
+  "domain": {
+    "domain_name": "steering_run",
+    "domain_version": "0.1.1",
+    "schema_cid": "cid_schema_v0_1_1",
+    "verifier_cid": "cid_verifier_v0_1_1"
+  },
+  "run": {
+    "cid_run": "bce8b7c4a69d4e56f96cc0e8e1f33c0a51af742e6d872a4dc402601365ccafb6",
+    "cid_run_algo": "sha256",
+    "cid_run_source": "canonical_json_utf8_keys_sorted_no_ws; cid_run computed with listed blank fields set to cid_run_field_blank_value",
+    "cid_run_field_blank_value": "",
+    "cid_run_blank_fields": [
+      "run.cid_run"
+    ]
+  },
+  "artifacts": {
+    "hash_algo": "sha256",
+    "items": [
+      {
+        "cid": "cid_schema_v0_1_1",
+        "bytes_hash": "88e3a3460364875b51434608a8f958293f568cc0170e39ceeca42d0de29e18fe",
+        "media_type": "application/schema+json",
+        "note": "schema bytes"
+      },
+      {
+        "cid": "cid_verifier_v0_1_1",
+        "bytes_hash": "1916a539a8c3efe49830d6b2e516fec76a738f22259a89bfb715f42c72f98456",
+        "media_type": "text/plain",
+        "note": "verifier placeholder bytes"
+      },
+      {
+        "cid": "cid_weights_dummy_v0_1_1",
+        "bytes_hash": "9b609192c2f949f8d254b77e3eebc9e9a3353b2a4eeaa4f5062fbfc439c1eea3",
+        "media_type": "application/octet-stream",
+        "note": "dummy weights bytes"
+      },
+      {
+        "cid": "cid_tokenizer_dummy_v0_1_1",
+        "bytes_hash": "eb5cc870784c3c338a7513a391f14b1425c12548f4ead37222392fa5343b9931",
+        "media_type": "application/octet-stream",
+        "note": "dummy tokenizer bytes"
+      },
+      {
+        "cid": "cid_prompt_suite_v0_1_1",
+        "bytes_hash": "36f30a2bc55970e67b9c5f269da169cae79377a3b5031fa2f9d48e04572e8a5a",
+        "media_type": "application/jsonl",
+        "note": "prompt suite jsonl"
+      },
+      {
+        "cid": "cid_training_data_v0_1_1",
+        "bytes_hash": "9baffb99bd31a7ac77eb2898da06cfc90486c9bacd7189dec213c044c80aa266",
+        "media_type": "text/plain",
+        "note": "training data placeholder"
+      },
+      {
+        "cid": "cid_tensor_r_f32le_4",
+        "bytes_hash": "ccaf6f183579497e8bfcd71045c04286fd3c2e60f3641e3eea164b761a4494b7",
+        "media_type": "application/octet-stream",
+        "note": "tensor r raw bytes"
+      },
+      {
+        "cid": "cid_tensor_u_f32le_4",
+        "bytes_hash": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb",
+        "media_type": "application/octet-stream",
+        "note": "tensor u raw bytes"
+      },
+      {
+        "cid": "cid_metric_code_v0_1_1",
+        "bytes_hash": "92f23e864ba830c59ab34e9a307c3ae50f40db9c5bbf38bfab0611dd95156da6",
+        "media_type": "text/plain",
+        "note": "metric code placeholder"
+      },
+      {
+        "cid": "cid_metric_results_v0_1_1",
+        "bytes_hash": "4cd5bca6035f53ed9816b7b1ef22a45115c661175cc6c503fbaef087c67a55ba",
+        "media_type": "application/json",
+        "note": "metric results bytes"
+      },
+      {
+        "cid": "cid_out_firsttok_v0_1_1",
+        "bytes_hash": "c7a2d26c9edae76d54afd2d9a11a3a8883b06afc0ed1dd3eb4e47cc554754363",
+        "media_type": "application/jsonl",
+        "note": "outputs first token dist"
+      }
+    ]
+  },
+  "model": {
+    "model_id": "dummy/model",
+    "revision": "rev0",
+    "weights_cid": "cid_weights_dummy_v0_1_1"
+  },
+  "tokenizer": {
+    "tokenizer_id": "dummy/tokenizer",
+    "revision": "rev0",
+    "tokenizer_cid": "cid_tokenizer_dummy_v0_1_1"
+  },
+  "hooks": [
+    {
+      "hook_name": "ln_final.hook_normalized",
+      "representation": "ln_final.hook_normalized",
+      "shape_hint": [
+        4
+      ]
+    }
+  ],
+  "directions": [
+    {
+      "name": "r",
+      "hook_name": "ln_final.hook_normalized",
+      "construction": {
+        "procedure_id": "mean_diff",
+        "hyperparams": {},
+        "training_data_cid": "cid_training_data_v0_1_1"
+      },
+      "tensor_encoding": {
+        "dtype": "float32",
+        "byte_order": "little",
+        "layout": "C_CONTIGUOUS",
+        "shape": [
+          4
+        ]
+      },
+      "tensor_bytes_cid": "cid_tensor_r_f32le_4",
+      "tensor_bytes_hash": "ccaf6f183579497e8bfcd71045c04286fd3c2e60f3641e3eea164b761a4494b7"
+    },
+    {
+      "name": "u",
+      "hook_name": "ln_final.hook_normalized",
+      "construction": {
+        "procedure_id": "mean_diff",
+        "hyperparams": {},
+        "training_data_cid": "cid_training_data_v0_1_1"
+      },
+      "tensor_encoding": {
+        "dtype": "float32",
+        "byte_order": "little",
+        "layout": "C_CONTIGUOUS",
+        "shape": [
+          4
+        ]
+      },
+      "tensor_bytes_cid": "cid_tensor_u_f32le_4",
+      "tensor_bytes_hash": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    }
+  ],
+  "orthogonalization": {
+    "procedure_id": "gram_schmidt",
+    "ordered_basis": [
+      "r",
+      "u"
+    ],
+    "overlap_definition": "cosine(a,b)",
+    "normalization_definition": "l2",
+    "tolerance_eps": 0.00001,
+    "reported_overlap_raw": 0.70710677,
+    "reported_overlap_used": 0.0
+  },
+  "prompt_suite": {
+    "suite_cid": "cid_prompt_suite_v0_1_1",
+    "format": "jsonl",
+    "canonicalization": "utf8; one-json-object-per-line; keys sorted; no ws; newline '\\n'",
+    "count": 1
+  },
+  "interventions": [
+    {
+      "trial_id": "t1",
+      "hook_name": "ln_final.hook_normalized",
+      "direction_scalars": {
+        "u": 0.0,
+        "r": 0.0
+      },
+      "sampling": {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "max_new_tokens": 1
+      },
+      "seed": 0
+    }
+  ],
+  "metrics": {
+    "verification_mode": "hash_only",
+    "definitions": [
+      {
+        "metric_id": "dummy_metric",
+        "metric_code_cid": "cid_metric_code_v0_1_1",
+        "metric_code_hash": "92f23e864ba830c59ab34e9a307c3ae50f40db9c5bbf38bfab0611dd95156da6"
+      }
+    ],
+    "results_cid": "cid_metric_results_v0_1_1",
+    "results_hash": "4cd5bca6035f53ed9816b7b1ef22a45115c661175cc6c503fbaef087c67a55ba"
+  },
+  "outputs": {
+    "hash_algo": "sha256",
+    "per_prompt_first_token_dist": {
+      "cid": "cid_out_firsttok_v0_1_1",
+      "bytes_hash": "c7a2d26c9edae76d54afd2d9a11a3a8883b06afc0ed1dd3eb4e47cc554754363",
+      "format_note": "jsonl"
+    }
+  },
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float32",
+    "python": "n/a",
+    "libraries": {
+      "rust": "1.x"
+    },
+    "determinism": {
+      "torch_deterministic_algorithms": false,
+      "cudnn_deterministic": false,
+      "cudnn_benchmark": false
+    },
+    "source_commit": "local"
+  }
+}

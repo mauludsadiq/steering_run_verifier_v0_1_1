@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Verify witness (debug)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build"],
+        "filter": {
+          "name": "steering_run_verifier",
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "verify",
+        "--witness",
+        "./witness.json",
+        "--cas-dir",
+        "./cas",
+        "--print-ok"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
