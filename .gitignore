@@ -1,3 +1,6 @@
 /target
 **/*.tmp
 .DS_Store
+steering_run_verifier_v0_1_1/
+runs/*
+!runs/verify_transcript*.json
