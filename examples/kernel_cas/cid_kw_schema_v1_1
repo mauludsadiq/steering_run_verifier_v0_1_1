@@ -4,27 +4,47 @@
   "title": "KernelWitness v1.1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["witness_version", "domain", "run", "artifacts", "kernel"],
+  "required": [
+    "witness_version",
+    "domain",
+    "run",
+    "artifacts",
+    "space",
+    "tolerance",
+    "projection",
+    "descent",
+    "samples",
+    "termination"
+  ],
   "properties": {
     "witness_version": { "type": "string", "const": "1.1" },
+
     "domain": {
       "type": "object",
       "additionalProperties": false,
       "required": ["domain_name", "domain_version", "schema_cid", "verifier_cid"],
       "properties": {
-        "domain_name": { "type": "string", "const": "kernel" },
+        "domain_name": { "type": "string", "const": "kernel_witness" },
         "domain_version": { "type": "string", "const": "1.1" },
         "schema_cid": { "type": "string", "minLength": 8 },
         "verifier_cid": { "type": "string", "minLength": 8 }
       }
     },
+
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cid_run", "cid_run_algo", "cid_run_field_blank_value", "cid_run_blank_fields"],
+      "required": [
+        "cid_run",
+        "cid_run_algo",
+        "cid_run_source",
+        "cid_run_field_blank_value",
+        "cid_run_blank_fields"
+      ],
       "properties": {
         "cid_run": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "cid_run_algo": { "type": "string", "const": "sha256" },
+        "cid_run_source": { "type": "string" },
         "cid_run_field_blank_value": { "type": "string", "const": "" },
         "cid_run_blank_fields": {
           "type": "array",
@@ -35,6 +55,7 @@
         }
       }
     },
+
     "artifacts": {
       "type": "object",
       "additionalProperties": false,
@@ -58,58 +79,111 @@
         }
       }
     },
-    "kernel": {
+
+    "space": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["space", "projection_P", "descent_Phi", "nilpotence_k", "entropy", "samples"],
+      "required": ["n"],
       "properties": {
-        "space": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["dim"],
-          "properties": { "dim": { "type": "integer", "minimum": 1 } }
-        },
-        "projection_P": { "$ref": "#/$defs/matrix" },
-        "descent_Phi": { "$ref": "#/$defs/matrix" },
-        "nilpotence_k": { "type": "integer", "minimum": 1 },
-        "entropy": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind"],
-          "properties": {
-            "kind": { "type": "string", "const": "termination_height_under_Phi" }
-          }
-        },
-        "samples": {
+        "n": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eps"],
+      "properties": {
+        "eps": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p"],
+      "properties": {
+        "p": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["x0", "expect_height"],
-            "properties": {
-              "x0": { "$ref": "#/$defs/vector" },
-              "expect_height": { "type": "integer", "minimum": 0 }
-            }
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "number" }
           }
         }
       }
-    }
-  },
-  "$defs": {
-    "vector": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "type": "integer" }
     },
-    "matrix": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "array",
-        "minItems": 1,
-        "items": { "type": "integer" }
+
+    "descent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phi"],
+      "properties": {
+        "phi": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "number" }
+          }
+        }
       }
+    },
+
+    "samples": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x_samples"],
+      "properties": {
+        "x_samples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "number" }
+          }
+        }
+      }
+    },
+
+    "termination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["nilpotence_k", "trace"] },
+
+        "k": { "type": "integer", "minimum": 1 },
+
+        "x_trace": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "number" }
+          }
+        },
+
+        "h_trace": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "nilpotence_k" } }, "required": ["kind"] },
+          "then": { "required": ["k"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "trace" } }, "required": ["kind"] },
+          "then": { "required": ["x_trace"] }
+        }
+      ]
     }
   }
 }

@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fard://domain/steering_run_witness/0.1.1/schema.json",
+  "title": "SteeringRunWitness v0.1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "witness_version",
+    "domain",
+    "run",
+    "artifacts",
+    "model",
+    "tokenizer",
+    "hooks",
+    "directions",
+    "orthogonalization",
+    "prompt_suite",
+    "interventions",
+    "metrics",
+    "runtime"
+  ],
+  "properties": {
+    "witness_version": { "type": "string", "const": "0.1.1" },
+
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain_name", "domain_version", "schema_cid", "verifier_cid"],
+      "properties": {
+        "domain_name": { "type": "string", "const": "steering_run" },
+        "domain_version": { "type": "string", "const": "0.1.1" },
+        "schema_cid": { "type": "string", "minLength": 8 },
+        "verifier_cid": { "type": "string", "minLength": 8 }
+      }
+    },
+
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cid_run",
+        "cid_run_algo",
+        "cid_run_source",
+        "cid_run_field_blank_value",
+        "cid_run_blank_fields"
+      ],
+      "properties": {
+        "cid_run": {
+          "type": "string",
+          "description": "sha256 hex of canonical JSON of this witness with listed blank fields set to cid_run_field_blank_value"
+        },
+        "cid_run_algo": { "type": "string", "const": "sha256" },
+        "cid_run_source": {
+          "type": "string",
+          "const": "canonical_json_utf8_keys_sorted_no_ws; cid_run computed with listed blank fields set to cid_run_field_blank_value"
+        },
+        "cid_run_field_blank_value": {
+          "type": "string",
+          "const": "",
+          "description": "Exact value to use when blanking fields for cid_run computation"
+        },
+        "cid_run_blank_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "const": ["run.cid_run"],
+          "description": "Dotpaths to fields that must be blanked before hashing (v0.1.1 pins to only run.cid_run)"
+        }
+      }
+    },
+
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash_algo", "items"],
+      "properties": {
+        "hash_algo": { "type": "string", "const": "sha256" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cid", "bytes_hash", "media_type", "note"],
+            "properties": {
+              "cid": { "type": "string", "minLength": 8 },
+              "bytes_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "media_type": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "revision", "weights_cid"],
+      "properties": {
+        "model_id": { "type": "string" },
+        "revision": { "type": "string", "description": "git sha / hf revision / exact tag" },
+        "weights_cid": { "type": "string", "minLength": 8 }
+      }
+    },
+
+    "tokenizer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokenizer_id", "revision", "tokenizer_cid"],
+      "properties": {
+        "tokenizer_id": { "type": "string" },
+        "revision": { "type": "string" },
+        "tokenizer_cid": { "type": "string", "minLength": 8 }
+      }
+    },
+
+    "hooks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hook_name", "representation", "shape_hint"],
+        "properties": {
+          "hook_name": { "type": "string" },
+          "representation": { "type": "string", "description": "e.g. ln_final.hook_normalized" },
+          "shape_hint": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer" }
+          }
+        }
+      }
+    },
+
+    "directions": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "hook_name",
+          "construction",
+          "tensor_encoding",
+          "tensor_bytes_cid",
+          "tensor_bytes_hash"
+        ],
+        "properties": {
+          "name": { "type": "string", "description": "e.g. 'u' or 'r' or 'u_perp'" },
+          "hook_name": { "type": "string" },
+
+          "construction": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["procedure_id", "hyperparams", "training_data_cid"],
+            "properties": {
+              "procedure_id": { "type": "string", "description": "e.g. mean_diff, logistic_probe, pca, etc." },
+              "hyperparams": { "type": "object" },
+              "training_data_cid": { "type": "string", "minLength": 8 }
+            }
+          },
+
+          "tensor_encoding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dtype", "byte_order", "layout", "shape"],
+            "properties": {
+              "dtype": { "type": "string", "enum": ["float32", "float16", "bfloat16"] },
+              "byte_order": { "type": "string", "enum": ["little"] },
+              "layout": { "type": "string", "enum": ["C_CONTIGUOUS"] },
+              "shape": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "integer", "minimum": 1 }
+              }
+            }
+          },
+
+          "tensor_bytes_cid": { "type": "string", "minLength": 8 },
+          "tensor_bytes_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+
+    "orthogonalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "procedure_id",
+        "ordered_basis",
+        "overlap_definition",
+        "normalization_definition",
+        "tolerance_eps",
+        "reported_overlap_raw",
+        "reported_overlap_used"
+      ],
+      "properties": {
+        "procedure_id": { "type": "string", "enum": ["gram_schmidt", "qr"] },
+        "ordered_basis": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string" },
+          "description": "Order matters: e.g. ['r','u'] means u is made orthogonal to r"
+        },
+
+        "overlap_definition": {
+          "type": "string",
+          "enum": [
+            "dot(normalize(a),normalize(b))",
+            "cosine(a,b)",
+            "corr(a,b)"
+          ],
+          "description": "Pinned definition used to compute overlaps"
+        },
+        "normalization_definition": {
+          "type": "string",
+          "enum": ["l2"],
+          "description": "Pinned normalization used in overlap definition"
+        },
+        "tolerance_eps": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Verifier must accept if abs(recomputed - reported) <= tolerance_eps"
+        },
+
+        "reported_overlap_raw": { "type": "number" },
+        "reported_overlap_used": { "type": "number" }
+      }
+    },
+
+    "prompt_suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suite_cid", "format", "canonicalization", "count"],
+      "properties": {
+        "suite_cid": { "type": "string", "minLength": 8 },
+        "format": { "type": "string", "enum": ["jsonl"] },
+        "canonicalization": {
+          "type": "string",
+          "const": "utf8; one-json-object-per-line; keys sorted; no ws; newline '\\n'"
+        },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "interventions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trial_id", "hook_name", "direction_scalars", "sampling", "seed"],
+        "properties": {
+          "trial_id": { "type": "string" },
+          "hook_name": { "type": "string" },
+
+          "direction_scalars": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Map name->scalar; e.g. {'u_perp': alpha, 'r': beta}"
+          },
+
+          "sampling": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["temperature", "top_p", "max_new_tokens"],
+            "properties": {
+              "temperature": { "type": "number", "minimum": 0.0 },
+              "top_p": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+              "max_new_tokens": { "type": "integer", "minimum": 1 }
+            }
+          },
+
+          "seed": { "type": "integer" }
+        }
+      }
+    },
+
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification_mode", "definitions", "results_cid", "results_hash"],
+      "properties": {
+        "verification_mode": {
+          "type": "string",
+          "enum": ["rerun_required", "hash_only"],
+          "description": "Pinned verifier mode for this witness"
+        },
+        "definitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["metric_id", "metric_code_cid", "metric_code_hash"],
+            "properties": {
+              "metric_id": { "type": "string" },
+              "metric_code_cid": { "type": "string", "minLength": 8 },
+              "metric_code_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        },
+        "results_cid": { "type": "string", "minLength": 8 },
+        "results_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash_algo"],
+      "properties": {
+        "hash_algo": { "type": "string", "const": "sha256" },
+
+        "per_prompt_first_token_dist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cid", "bytes_hash", "format_note"],
+          "properties": {
+            "cid": { "type": "string", "minLength": 8 },
+            "bytes_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "format_note": { "type": "string" }
+          }
+        },
+
+        "per_prompt_generated_text": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cid", "bytes_hash", "format_note"],
+          "properties": {
+            "cid": { "type": "string", "minLength": 8 },
+            "bytes_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "format_note": { "type": "string" }
+          }
+        },
+
+        "per_prompt_logits_digest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cid", "bytes_hash", "logits_encoding"],
+          "properties": {
+            "cid": { "type": "string", "minLength": 8 },
+            "bytes_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "logits_encoding": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dtype", "byte_order", "layout", "shape", "digest_note"],
+              "properties": {
+                "dtype": { "type": "string", "enum": ["float32", "float16", "bfloat16"] },
+                "byte_order": { "type": "string", "enum": ["little"] },
+                "layout": { "type": "string", "enum": ["C_CONTIGUOUS"] },
+                "shape": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "integer", "minimum": 1 }
+                },
+                "digest_note": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "dtype", "python", "libraries", "determinism", "source_commit"],
+      "properties": {
+        "device": { "type": "string", "description": "cpu/cuda:0/mps etc." },
+        "dtype": { "type": "string" },
+        "python": { "type": "string" },
+        "libraries": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "determinism": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["torch_deterministic_algorithms", "cudnn_deterministic", "cudnn_benchmark"],
+          "properties": {
+            "torch_deterministic_algorithms": { "type": "boolean" },
+            "cudnn_deterministic": { "type": "boolean" },
+            "cudnn_benchmark": { "type": "boolean" }
+          }
+        },
+        "source_commit": { "type": "string" }
+      }
+    }
+  },
+
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "metrics": {
+            "properties": { "verification_mode": { "const": "hash_only" } },
+            "required": ["verification_mode"]
+          }
+        },
+        "required": ["metrics"]
+      },
+      "then": {
+        "required": ["outputs"],
+        "properties": {
+          "outputs": {
+            "required": ["hash_algo"],
+            "anyOf": [
+              { "required": ["per_prompt_first_token_dist"] },
+              { "required": ["per_prompt_logits_digest"] }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
