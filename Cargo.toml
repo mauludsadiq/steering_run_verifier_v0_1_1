@@ -14,3 +14,7 @@ sha2 = "0.10"
 hex = "0.4"
 jsonschema = "0.18"
 half = "2"
+
+
+[dev-dependencies]
+proptest = "1"
