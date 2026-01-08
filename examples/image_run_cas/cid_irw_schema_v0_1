@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fard://domain/image_run_witness/0.1/schema.json",
+  "title": "ImageRunWitness v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "witness_version",
+    "domain",
+    "run",
+    "artifacts",
+    "input",
+    "preprocess",
+    "model"
+  ],
+  "properties": {
+    "witness_version": { "type": "string", "const": "0.1" },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain_name", "domain_version", "schema_cid", "verifier_cid"],
+      "properties": {
+        "domain_name": { "type": "string", "const": "image_run_witness" },
+        "domain_version": { "type": "string", "const": "0.1" },
+        "schema_cid": { "type": "string", "minLength": 8 },
+        "verifier_cid": { "type": "string", "minLength": 8 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cid_run",
+        "cid_run_algo",
+        "cid_run_source",
+        "cid_run_field_blank_value",
+        "cid_run_blank_fields"
+      ],
+      "properties": {
+        "cid_run": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "cid_run_algo": { "type": "string", "const": "sha256" },
+        "cid_run_source": { "type": "string" },
+        "cid_run_field_blank_value": { "type": "string", "const": "" },
+        "cid_run_blank_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "const": ["run.cid_run"]
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash_algo", "items"],
+      "properties": {
+        "hash_algo": { "type": "string", "const": "sha256" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cid", "bytes_hash", "media_type", "note"],
+            "properties": {
+              "cid": { "type": "string", "minLength": 8 },
+              "bytes_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "media_type": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_cid", "image_media_type", "h", "w"],
+      "properties": {
+        "image_cid": { "type": "string", "minLength": 8 },
+        "image_media_type": { "type": "string" },
+        "h": { "type": "integer", "minimum": 1 },
+        "w": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "preprocess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resize_h", "resize_w", "normalize_mean", "normalize_std", "patch_size", "token_count"],
+      "properties": {
+        "resize_h": { "type": "integer", "minimum": 1 },
+        "resize_w": { "type": "integer", "minimum": 1 },
+        "normalize_mean": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+        "normalize_std": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+        "patch_size": { "type": "integer", "minimum": 1 },
+        "token_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id"],
+      "properties": { "model_id": { "type": "string", "minLength": 3 } }
+    }
+  }
+}

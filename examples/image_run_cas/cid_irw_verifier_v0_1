@@ -1,0 +1,500 @@
+use serde::Deserialize;
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+
+use steering_run_verifier::canonical::{canonical_json_string, set_dotpath_string};
+use steering_run_verifier::hash::sha256_hex;
+
+const EXPECTED_CID_RUN_SOURCE: &str =
+    "canonical_json_utf8_keys_sorted_no_ws; cid_run computed with run.cid_run blanked to empty";
+
+#[derive(Debug, serde::Serialize)]
+struct ErrorOut {
+    kind: &'static str,
+    error_id: String,
+    message: String,
+}
+
+impl ErrorOut {
+    fn new(error_id: &str, message: &str) -> Self {
+        Self {
+            kind: "error",
+            error_id: error_id.to_string(),
+            message: message.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+struct ArtifactItem {
+    cid: String,
+    bytes_hash: String,
+    media_type: String,
+    note: String,
+}
+
+#[derive(Deserialize)]
+struct Artifacts {
+    hash_algo: String,
+    items: Vec<ArtifactItem>,
+}
+
+#[derive(Deserialize)]
+struct Domain {
+    domain_name: String,
+    domain_version: String,
+    schema_cid: String,
+    verifier_cid: String,
+}
+
+#[derive(Deserialize)]
+struct Run {
+    cid_run: String,
+    cid_run_algo: String,
+    cid_run_source: String,
+    cid_run_field_blank_value: String,
+    cid_run_blank_fields: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Input {
+    image_cid: String,
+    image_media_type: String,
+    h: u32,
+    w: u32,
+}
+
+#[derive(Deserialize)]
+struct Preprocess {
+    resize_h: u32,
+    resize_w: u32,
+    normalize_mean: [f64; 3],
+    normalize_std: [f64; 3],
+    patch_size: u32,
+    token_count: u32,
+}
+
+#[derive(Deserialize)]
+struct Model {
+    model_id: String,
+}
+
+#[derive(Deserialize)]
+struct ImageRunWitness {
+    witness_version: String,
+    domain: Domain,
+    run: Run,
+    artifacts: Artifacts,
+    input: Input,
+    preprocess: Preprocess,
+    model: Model,
+}
+
+fn read_bytes(path: &str) -> Result<Vec<u8>, String> {
+    fs::read(path).map_err(|e| format!("failed to read {}: {}", path, e))
+}
+
+fn cas_path(cas_dir: &str, cid: &str) -> String {
+    format!("{}/{}", cas_dir.trim_end_matches('/'), cid)
+}
+
+fn verify_artifacts(cas_dir: &str, artifacts: &Artifacts) -> Result<(), String> {
+    if artifacts.hash_algo != "sha256" {
+        return Err("ARTIFACT_HASH_ALGO_UNSUPPORTED".to_string());
+    }
+
+    for it in &artifacts.items {
+        let _ = &it.media_type;
+        let _ = &it.note;
+
+        let p = cas_path(cas_dir, &it.cid);
+        let b = read_bytes(&p).map_err(|_| format!("ARTIFACT_MISSING failed to read {}", p))?;
+        let h = sha256_hex(&b);
+        if h != it.bytes_hash {
+            return Err(format!(
+                "ARTIFACT_HASH_MISMATCH cid={} expected_hash={} got_hash={}",
+                it.cid, it.bytes_hash, h
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn collect_cid_fields(w: &ImageRunWitness) -> BTreeSet<String> {
+    let mut s = BTreeSet::new();
+    s.insert(w.domain.schema_cid.clone());
+    s.insert(w.domain.verifier_cid.clone());
+    s.insert(w.input.image_cid.clone());
+    s
+}
+
+fn verify_cid_reference_closure(w: &ImageRunWitness) -> Result<(), String> {
+    let declared: BTreeSet<String> = w.artifacts.items.iter().map(|it| it.cid.clone()).collect();
+    let referenced = collect_cid_fields(w);
+
+    let mut missing: Vec<String> = referenced
+        .into_iter()
+        .filter(|c| !declared.contains(c))
+        .collect();
+    missing.sort();
+
+    if !missing.is_empty() {
+        return Err(format!("CID_REFERENCE_CLOSURE missing_cids={:?}", missing));
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut dups = BTreeSet::new();
+    for it in &w.artifacts.items {
+        if !seen.insert(it.cid.clone()) {
+            dups.insert(it.cid.clone());
+        }
+    }
+    if !dups.is_empty() {
+        let mut v: Vec<String> = dups.into_iter().collect();
+        v.sort();
+        return Err(format!("CID_REFERENCE_CLOSURE duplicate_cids={:?}", v));
+    }
+
+    Ok(())
+}
+
+fn compute_cid_run_from_value(
+    v: &Value,
+    blank_paths: &[String],
+    blank_value: &str,
+) -> Result<String, String> {
+    let mut vv = v.clone();
+    for p in blank_paths {
+        set_dotpath_string(&mut vv, p, blank_value)
+            .map_err(|e| format!("CID_RUN_BLANK_FAILED path={} err={}", p, e))?;
+    }
+    let canon = canonical_json_string(&vv).map_err(|e| format!("CANON_FAILED {}", e))?;
+    Ok(sha256_hex(canon.as_bytes()))
+}
+
+fn compute_cid_run_from_path(
+    path: &str,
+    blank_paths: &[String],
+    blank_value: &str,
+) -> Result<String, String> {
+    let s = fs::read_to_string(path).map_err(|e| format!("WITNESS_READ_FAILED {}", e))?;
+    let v: Value = serde_json::from_str(&s).map_err(|e| format!("WITNESS_JSON_INVALID {}", e))?;
+    compute_cid_run_from_value(&v, blank_paths, blank_value)
+}
+
+fn verify_cid_run(path: &str, w: &ImageRunWitness) -> Result<String, String> {
+    if w.run.cid_run_algo != "sha256" {
+        return Err("CID_RUN_ALGO_UNSUPPORTED".to_string());
+    }
+    if w.run.cid_run_source != EXPECTED_CID_RUN_SOURCE {
+        return Err("CID_RUN_SOURCE_NOT_PINNED".to_string());
+    }
+    if !w.run.cid_run_field_blank_value.is_empty() {
+        return Err("CID_RUN_BLANK_VALUE_NOT_EMPTY".to_string());
+    }
+    if w.run.cid_run_blank_fields != vec!["run.cid_run".to_string()] {
+        return Err("CID_RUN_BLANK_FIELDS_NOT_PINNED".to_string());
+    }
+
+    let recomputed = compute_cid_run_from_path(
+        path,
+        &w.run.cid_run_blank_fields,
+        &w.run.cid_run_field_blank_value,
+    )?;
+    if recomputed != w.run.cid_run {
+        return Err(format!(
+            "CID_RUN_MISMATCH claimed={} recomputed={}",
+            w.run.cid_run, recomputed
+        ));
+    }
+    Ok(recomputed)
+}
+
+fn artifact_index(items: &[ArtifactItem]) -> BTreeMap<String, ArtifactItem> {
+    let mut m = BTreeMap::new();
+    for it in items {
+        m.insert(it.cid.clone(), it.clone());
+    }
+    m
+}
+
+fn decode_image_hw(bytes: &[u8]) -> Result<(u32, u32), String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("IMAGE_DECODE_FAIL {}", e))?;
+    Ok((img.height(), img.width()))
+}
+
+fn expected_token_count(resize_h: u32, resize_w: u32, patch: u32) -> Result<u32, String> {
+    if patch == 0 {
+        return Err("PATCH_SIZE_ZERO".to_string());
+    }
+    if !resize_h.is_multiple_of(patch) || !resize_w.is_multiple_of(patch) {
+        return Err("PATCH_GRID_NOT_DIVISIBLE".to_string());
+    }
+    let gh = resize_h / patch;
+    let gw = resize_w / patch;
+    Ok(1 + gh * gw)
+}
+
+fn verify_preprocess_fields(w: &ImageRunWitness) -> Result<(), String> {
+    if w.input.image_media_type.is_empty() {
+        return Err("IMAGE_MEDIA_TYPE_EMPTY".to_string());
+    }
+
+    for v in w
+        .preprocess
+        .normalize_mean
+        .iter()
+        .chain(w.preprocess.normalize_std.iter())
+    {
+        if !v.is_finite() {
+            return Err("NORMALIZE_NONFINITE".to_string());
+        }
+    }
+
+    for s in w.preprocess.normalize_std.iter() {
+        if s.abs() == 0.0 {
+            return Err("NORMALIZE_STD_ZERO".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("usage: image_run_witness_verifier verify --witness <path> --cas-dir <dir> [--print-ok]");
+        eprintln!("       image_run_witness_verifier cid-run --witness <path>");
+        std::process::exit(2);
+    }
+
+    let cmd = args[1].as_str();
+
+    if cmd == "cid-run" {
+        let mut witness_path = None;
+        let mut i = 2usize;
+        while i < args.len() {
+            if args[i] == "--witness" && i + 1 < args.len() {
+                witness_path = Some(args[i + 1].clone());
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+        let path = witness_path.unwrap_or_else(|| {
+            eprintln!("missing --witness");
+            std::process::exit(2);
+        });
+
+        let s = fs::read_to_string(&path).unwrap_or_else(|e| {
+            eprintln!(
+                "{}",
+                serde_json::to_string(&ErrorOut::new("WITNESS_READ_FAILED", &e.to_string()))
+                    .unwrap()
+            );
+            std::process::exit(1);
+        });
+        let v: Value = serde_json::from_str(&s).unwrap_or_else(|e| {
+            eprintln!(
+                "{}",
+                serde_json::to_string(&ErrorOut::new("WITNESS_JSON_INVALID", &e.to_string()))
+                    .unwrap()
+            );
+            std::process::exit(1);
+        });
+
+        let blank_paths = vec!["run.cid_run".to_string()];
+        let cid = compute_cid_run_from_value(&v, &blank_paths, "").unwrap_or_else(|e| {
+            eprintln!(
+                "{}",
+                serde_json::to_string(&ErrorOut::new("CID_RUN_COMPUTE_FAIL", &e)).unwrap()
+            );
+            std::process::exit(1);
+        });
+
+        let out = serde_json::json!({ "cid_run": cid });
+        println!("{}", serde_json::to_string(&out).unwrap());
+        return;
+    }
+
+    if cmd != "verify" {
+        eprintln!("unknown command");
+        std::process::exit(2);
+    }
+
+    let mut witness_path = None;
+    let mut cas_dir = None;
+    let mut print_ok = false;
+
+    let mut i = 2usize;
+    while i < args.len() {
+        if args[i] == "--witness" && i + 1 < args.len() {
+            witness_path = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--cas-dir" && i + 1 < args.len() {
+            cas_dir = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--print-ok" {
+            print_ok = true;
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+
+    let path = witness_path.unwrap_or_else(|| {
+        eprintln!("missing --witness");
+        std::process::exit(2);
+    });
+    let cas = cas_dir.unwrap_or_else(|| {
+        eprintln!("missing --cas-dir");
+        std::process::exit(2);
+    });
+
+    let s = fs::read_to_string(&path).unwrap_or_else(|e| {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("WITNESS_READ_FAILED", &e.to_string())).unwrap()
+        );
+        std::process::exit(1);
+    });
+
+    let w: ImageRunWitness = serde_json::from_str(&s).unwrap_or_else(|e| {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("WITNESS_JSON_INVALID", &e.to_string())).unwrap()
+        );
+        std::process::exit(1);
+    });
+
+    if w.witness_version != "0.1" {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new(
+                "WITNESS_VERSION_UNSUPPORTED",
+                "expected 0.1"
+            ))
+            .unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    if w.domain.domain_name != "image_run_witness" || w.domain.domain_version != "0.1" {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new(
+                "DOMAIN_MISMATCH",
+                "expected image_run_witness/0.1"
+            ))
+            .unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    if let Err(e) = verify_preprocess_fields(&w) {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("PREPROCESS_FIELDS_FAIL", &e)).unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    if let Err(e) = verify_cid_reference_closure(&w) {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("CID_REFERENCE_CLOSURE", &e)).unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    if let Err(e) = verify_artifacts(&cas, &w.artifacts) {
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("ARTIFACTS_FAIL", &e)).unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    let cid_run = match verify_cid_run(&path, &w) {
+        Ok(x) => x,
+        Err(e) => {
+            println!(
+                "{}",
+                serde_json::to_string(&ErrorOut::new("CID_RUN_MISMATCH", &e)).unwrap()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let idx = artifact_index(&w.artifacts.items);
+    let img_item = idx.get(&w.input.image_cid).unwrap();
+    let img_bytes = read_bytes(&cas_path(&cas, &img_item.cid)).unwrap();
+    let (h0, w0) = match decode_image_hw(&img_bytes) {
+        Ok(hw) => hw,
+        Err(e) => {
+            println!(
+                "{}",
+                serde_json::to_string(&ErrorOut::new("IMAGE_DECODE_FAIL", &e)).unwrap()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    if h0 != w.input.h || w0 != w.input.w {
+        let msg = format!(
+            "INPUT_HW_MISMATCH claimed=({}, {}) decoded=({}, {})",
+            w.input.h, w.input.w, h0, w0
+        );
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("INPUT_HW_MISMATCH", &msg)).unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    let expected_tokens = match expected_token_count(
+        w.preprocess.resize_h,
+        w.preprocess.resize_w,
+        w.preprocess.patch_size,
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            println!(
+                "{}",
+                serde_json::to_string(&ErrorOut::new("TOKEN_SHAPE_FAIL", &e)).unwrap()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    if expected_tokens != w.preprocess.token_count {
+        let msg = format!(
+            "TOKEN_COUNT_MISMATCH claimed={} expected={}",
+            w.preprocess.token_count, expected_tokens
+        );
+        println!(
+            "{}",
+            serde_json::to_string(&ErrorOut::new("TOKEN_COUNT_MISMATCH", &msg)).unwrap()
+        );
+        std::process::exit(1);
+    }
+
+    if !print_ok {
+        return;
+    }
+
+    let out = serde_json::json!({
+      "ok": true,
+      "cid_run_expected": w.run.cid_run,
+      "cid_run_computed": cid_run,
+      "cid_run_matches": true,
+      "input": { "h": w.input.h, "w": w.input.w, "image_cid": w.input.image_cid, "image_media_type": w.input.image_media_type },
+      "preprocess": { "resize_h": w.preprocess.resize_h, "resize_w": w.preprocess.resize_w, "patch_size": w.preprocess.patch_size, "token_count": w.preprocess.token_count },
+      "model": { "model_id": w.model.model_id },
+      "derived": { "expected_token_count": expected_tokens }
+    });
+
+    println!("{}", serde_json::to_string(&out).unwrap());
+}
